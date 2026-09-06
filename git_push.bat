@@ -27,6 +27,13 @@ if errorlevel 1 (
 set REPO=https://github.com/Iwillbewarlock/HairPositioner.git
 git remote remove origin >nul 2>&1
 git remote add origin "%REPO%"
+
+rem the GitHub repo may already hold a README / LICENSE created on the site:
+rem merge it in first (our files win on conflict), then push
+git fetch origin main >nul 2>&1
+if not errorlevel 1 (
+  git merge --allow-unrelated-histories -X ours -m "merge GitHub-created files" origin/main
+)
 git push -u origin main
 if errorlevel 1 (
   echo.
