@@ -1,0 +1,30 @@
+{
+	"version": 3,
+	"cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+	"configurePresets": [
+		{
+			"name": "vcpkg",
+			"hidden": true,
+			"toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+		},
+		{
+			"name": "windows",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+				"VCPKG_TARGET_TRIPLET": "x64-windows-static",
+				"CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+			}
+		},
+		{
+			"name": "default",
+			"displayName": "default (lets CMake pick the installed Visual Studio)",
+			"inherits": [ "vcpkg", "windows" ],
+			"binaryDir": "${sourceDir}/build",
+			"architecture": { "value": "x64", "strategy": "set" }
+		}
+	],
+	"buildPresets": [
+		{ "name": "default", "configurePreset": "default", "configuration": "Release" }
+	]
+}

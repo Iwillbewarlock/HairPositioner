@@ -1,0 +1,10 @@
+{
+	"name": "hairpositioner",
+	"version-string": "0.0.1",
+	"description": "Phase 0 probe for a race-agnostic hair positioner",
+	"dependencies": [
+		"spdlog",
+		"rapidcsv"
+	],
+	"builtin-baseline": "f4ea42fa5c2b993cf2b75725331616999e2e34d1"
+}

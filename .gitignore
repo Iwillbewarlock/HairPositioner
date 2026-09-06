@@ -1,0 +1,27 @@
+# build output
+build/
+*.log
+*_log_latest.txt
+cmake_help_raw.txt
+cmake_generators.txt
+setup_log.txt
+
+# CommonLibSSE-NG is fetched by setup.bat (not vendored)
+extern/
+
+# compiled artifacts -- produced by build.bat / compile.bat
+*.dll
+*.pdb
+*.pex
+package/SKSE/Plugins/*.dll
+package/Scripts/*.pex
+
+# third-party Papyrus sources used only for compiling (RaceMenu, vanilla, SKSE)
+papyrus/import/
+
+# editor / OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
