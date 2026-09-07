@@ -33,7 +33,9 @@ namespace HP
 		RE::NiPoint3 rotate{ 0.0f, 0.0f, 0.0f };  // degrees
 		RE::NiPoint3 scale{ 1.0f, 1.0f, 1.0f };
 		PivotMode    pivot{ PivotMode::kBone };
+		bool         worn{ false };  // also move worn items in the wig slots (helmets included!)
 
+		// Identity of the nine channels only; `worn` is a target choice, not a transform.
 		[[nodiscard]] bool  IsIdentity() const;
 		[[nodiscard]] float Channel(std::int32_t a_channel) const;
 		void                SetChannel(std::int32_t a_channel, float a_value);
@@ -43,7 +45,15 @@ namespace HP
 	class OffsetMap
 	{
 	public:
+		// Map in the mesh's own (bind) space about a_pivot.
 		OffsetMap(const HairOffset& a_offset, const RE::NiPoint3& a_pivot);
+
+		// Map defined in BONE space (about a_pivotBone, in bone coordinates) and
+		// pulled back into this mesh's bind space through a_bind, the mesh's
+		// skin-to-bone transform of its dominant bone: v' = bind^-1(M(bind(v))).
+		// Pieces of one hair then move by the same amount on screen even when
+		// their bind transforms carry different scales or rotations.
+		OffsetMap(const HairOffset& a_offset, const RE::NiPoint3& a_pivotBone, const RE::NiTransform& a_bind);
 
 		[[nodiscard]] RE::NiPoint3 operator()(const RE::NiPoint3& a_v) const;
 

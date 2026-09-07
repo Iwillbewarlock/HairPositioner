@@ -19,6 +19,17 @@ findstr /C:"Visual Studio" cmake_help_raw.txt > cmake_generators.txt 2>&1
 type cmake_generators.txt
 
 echo.
+rem A build\ folder made while the project sat in another location carries a
+rem CMakeCache.txt pointing at the old path; CMake refuses to reuse it. Detect
+rem that and start the build folder over.
+if exist "build\CMakeCache.txt" (
+    findstr /I /C:"CMAKE_HOME_DIRECTORY:INTERNAL=%CD:\=/%" "build\CMakeCache.txt" >nul 2>&1
+    if errorlevel 1 (
+        echo  project folder moved -- clearing stale build\ cache
+        rmdir /s /q build
+    )
+)
+
 echo [1/2] configuring...
 cmake --preset default > cmake_log_latest.txt 2>&1
 set CFG=%errorlevel%

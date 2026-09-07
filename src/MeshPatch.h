@@ -54,6 +54,14 @@ namespace HP
 		// Drop the session-wide rest-position registry (call on save load).
 		static void ClearRestRegistry();
 
+		// A rebuilt head part (RaceMenu converting a piece to a dynamic shape)
+		// arrives as a new geometry whose buffer already holds our transformed
+		// positions. Copy the rest positions over from the patch that tracked
+		// the geometry it replaced, so they are never re-captured from that.
+		void InheritFrom(const MeshPatch& a_old);
+		[[nodiscard]] RE::BSGeometry* Geometry() const { return _keepAlive.get(); }
+		[[nodiscard]] static std::uint32_t VertexCountOf(RE::BSGeometry* a_geo);
+
 		[[nodiscard]] bool             HasRest() const { return _hasRest; }
 		[[nodiscard]] const Positions& Rest() const { return _rest; }
 		[[nodiscard]] const std::string& LastSkip() const { return _lastSkip; }

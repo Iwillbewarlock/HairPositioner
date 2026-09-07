@@ -92,6 +92,24 @@ namespace HP
 		};
 	}
 
+	OffsetMap::OffsetMap(const HairOffset& a_offset, const RE::NiPoint3& a_pivotBone, const RE::NiTransform& a_bind) :
+		OffsetMap(a_offset, a_pivotBone)
+	{
+		// bind(v) = k R v + t   ;   bone-space map M(p) = A p + b
+		// v' = bind^-1(M(bind(v))) = (R^T A R) v + R^T (A t + b - t) / k
+		const RE::NiMatrix3& r = a_bind.rotate;
+		const RE::NiPoint3&  t = a_bind.translate;
+		const float          k = a_bind.scale != 0.0f ? a_bind.scale : 1.0f;
+		const RE::NiMatrix3  rt = r.Transpose();
+
+		const RE::NiPoint3 at = _a * t;
+		const RE::NiPoint3 inner{ at.x + _b.x - t.x, at.y + _b.y - t.y, at.z + _b.z - t.z };
+		const RE::NiPoint3 rb = rt * inner;
+
+		_a = rt * _a * r;
+		_b = { rb.x / k, rb.y / k, rb.z / k };
+	}
+
 	RE::NiPoint3 OffsetMap::operator()(const RE::NiPoint3& a_v) const
 	{
 		const RE::NiPoint3 av = _a * a_v;

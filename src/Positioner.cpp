@@ -50,6 +50,7 @@ namespace HP
 			// re-capturing them would read transformed positions as rest.
 			void SyncKey()
 			{
+				SyncWornSwitch();
 				const auto key = HairScene::Key();
 				if (key == _key) {
 					return;
@@ -69,6 +70,41 @@ namespace HP
 				_stamp.clear();  // force a full walk on the next refresh
 			}
 
+			// The "follow worn items" choice lives in the offset (so it rides
+			// along with presets and the co-save); the scene view keeps its own
+			// copy. Bring the two in line here, on the main thread. Switching
+			// it OFF must first put every worn mesh back where the engine had
+			// it -- otherwise a helmet would stay wherever the hair was.
+			void SyncWornSwitch()
+			{
+				const bool want = Offset().worn;
+				if (HairScene::FollowWorn() == want) {
+					return;
+				}
+				if (!want) {
+					ReleaseWorn();
+				}
+				HairScene::SetFollowWorn(want);
+				_stamp.clear();
+				SKSE::log::info("follow worn items: {}", want ? "on" : "off");
+			}
+
+			void ReleaseWorn()
+			{
+				const HairOffset identity;
+				for (const auto& g : HairScene::Worn(true)) {
+					const auto it = _patches.find(g.geo);
+					if (it == _patches.end()) {
+						continue;
+					}
+					if (it->second.HasRest()) {
+						const OffsetMap map{ identity, RE::NiPoint3{} };
+						it->second.Commit(g.geo, map, false);
+					}
+					_patches.erase(it);
+				}
+			}
+
 			// Write the offset into every current hair geometry.
 			void Apply(const HairOffset& a_offset, bool a_verbose)
 			{
@@ -76,6 +112,32 @@ namespace HP
 				if (geos.empty()) {
 					ReportNoHair(a_verbose);
 					return;
+				}
+
+				// A head part rebuilt by RaceMenu (piece converted to a dynamic
+				// shape) shows up as a new geometry with the same name and vertex
+				// count as one we already patched -- and its buffer holds OUR
+				// positions. Hand the rest positions over before capturing, or
+				// they would be re-read from the transformed buffer (double apply).
+				for (const auto& g : geos) {
+					if (_patches.contains(g.geo)) {
+						continue;
+					}
+					const auto name = std::string{ g.geo->name.c_str() ? g.geo->name.c_str() : "" };
+					const auto count = MeshPatch::VertexCountOf(g.geo);
+					const MeshPatch* source = nullptr;
+					for (const auto& [oldGeo, old] : _patches) {
+						const bool gone = std::none_of(geos.begin(), geos.end(), [&](const HairGeometry& a_h) { return a_h.geo == oldGeo; });
+						if (gone && old.HasRest() && old.Rest().size() == count &&
+							HairScene::SameName(name, oldGeo->name.c_str() ? oldGeo->name.c_str() : "")) {
+							source = std::addressof(old);
+							break;
+						}
+					}
+					if (source) {
+						_patches[g.geo].InheritFrom(*source);  // element refs survive a rehash
+						SKSE::log::info("[{}] rebuilt -- rest positions carried over ({} verts)", name, count);
+					}
 				}
 
 				std::vector<HairGeometry> ready;
@@ -88,18 +150,25 @@ namespace HP
 					return;
 				}
 
-				const auto      pivot = PivotSolver::Solve(a_offset.pivot, ready, _patches);
-				const OffsetMap map{ a_offset, pivot };
+				// The offset is defined in head-bone space, shared by every piece,
+				// and pulled back into each piece's own bind space. Pivot:
+				//   bone   -> the bone origin (0,0,0 in bone space)
+				//   center -> centroid of all rest vertices, in bone space
+				//   origin -> each piece's own bind-space origin
+				const RE::NiPoint3 shared = a_offset.pivot == PivotMode::kObject ? PivotSolver::BoneSpaceCentroid(ready, _patches) : RE::NiPoint3{};
 
 				int done = 0;
 				for (const auto& g : ready) {
+					const auto         frame = PivotSolver::BindFrame(g.geo);
+					const RE::NiPoint3 pivot = a_offset.pivot == PivotMode::kSpace ? frame * RE::NiPoint3{} : shared;
+					const OffsetMap    map{ a_offset, pivot, frame };
 					if (_patches[g.geo].Commit(g.geo, map, a_verbose)) {
 						++done;
 					}
 				}
 				_stamp = HairScene::TakeStamp();
 				if (a_verbose) {
-					Con::Say("applied to {} of {} geometry(ies), pivot ({:.2f}, {:.2f}, {:.2f})", done, geos.size(), pivot.x, pivot.y, pivot.z);
+					Con::Say("applied to {} of {} geometry(ies), pivot mode {}", done, geos.size(), static_cast<int>(a_offset.pivot));
 				}
 			}
 
@@ -124,18 +193,18 @@ namespace HP
 					_stamp = stamp;
 					return;
 				}
-				std::erase_if(_patches, [&](const auto& a_entry) {
-					return std::none_of(geos.begin(), geos.end(), [&](const HairGeometry& a_g) { return a_g.geo == a_entry.first; });
-				});
 				const bool lost = std::any_of(geos.begin(), geos.end(), [&](const HairGeometry& a_g) {
 					const auto it = _patches.find(a_g.geo);
 					return it == _patches.end() || !it->second.Settled(a_g.geo);
 				});
 				if (lost) {
-					Apply(offset, false);
+					Apply(offset, false);  // may carry rest over from patches about to be pruned
 				} else {
 					_stamp = stamp;
 				}
+				std::erase_if(_patches, [&](const auto& a_entry) {
+					return std::none_of(geos.begin(), geos.end(), [&](const HairGeometry& a_g) { return a_g.geo == a_entry.first; });
+				});
 			}
 
 			void Probe()
@@ -167,12 +236,13 @@ namespace HP
 					} else {
 						Con::SayErr("[{}] no skin partition", g.label);
 					}
+					const auto f = PivotSolver::BindFrame(g.geo);
+					Con::Say("  bind: scale {:.3f} t ({:.2f} {:.2f} {:.2f}) rot00 {:.3f}  geo scale {:.3f}",
+						f.scale, f.translate.x, f.translate.y, f.translate.z, f.rotate.entry[0][0], g.geo->world.scale);
 					if (it != _patches.end() && !it->second.LastSkip().empty()) {
 						Con::SayWarn("  last skip: {}", it->second.LastSkip());
 					}
 				}
-				const auto pivot = PivotSolver::Solve(Offset().pivot, geos, _patches);
-				Con::Say("pivot ({:.2f}, {:.2f}, {:.2f})", pivot.x, pivot.y, pivot.z);
 			}
 
 			std::atomic<bool>      applyQueued{ false };
@@ -288,6 +358,17 @@ namespace HP
 		return Session::Get().Offset().pivot;
 	}
 
+	void SetFollowWorn(bool a_on)
+	{
+		Session::Get().EditOffset([&](HairOffset& a_o) { a_o.worn = a_on; });
+		QueueApply();
+	}
+
+	bool GetFollowWorn()
+	{
+		return Session::Get().Offset().worn;
+	}
+
 	void ResetAdjust()
 	{
 		ReplaceOffset(HairOffset{});
@@ -323,6 +404,7 @@ namespace HP
 		Con::Say("  scale  x {:.3f} y {:.3f} z {:.3f}", o.scale.x, o.scale.y, o.scale.z);
 		Con::Say("  pivot  {} ({})", static_cast<std::uint32_t>(o.pivot),
 			o.pivot == PivotMode::kBone ? "bone" : o.pivot == PivotMode::kObject ? "center" : "origin");
+		Con::Say("  worn   {}", o.worn ? "follow (wig slots)" : "off");
 	}
 
 	void Probe()
@@ -377,7 +459,7 @@ namespace HP
 	namespace
 	{
 		constexpr std::uint32_t kRecordType = 'HPAJ';
-		constexpr std::uint32_t kRecordVersion = 2;
+		constexpr std::uint32_t kRecordVersion = 3;  // v3: pad[0] = follow worn items (v2 records read as off)
 
 		struct Record
 		{
@@ -400,6 +482,7 @@ namespace HP
 		r.rotate[0] = o.rotate.x; r.rotate[1] = o.rotate.y; r.rotate[2] = o.rotate.z;
 		r.scale[0] = o.scale.x;   r.scale[1] = o.scale.y;   r.scale[2] = o.scale.z;
 		r.pivot = static_cast<std::uint32_t>(o.pivot);
+		r.pad[0] = o.worn ? 1 : 0;
 		if (!a_intfc->WriteRecord(kRecordType, kRecordVersion, r)) {
 			SKSE::log::error("co-save write failed");
 		}
@@ -410,7 +493,7 @@ namespace HP
 		HairOffset    loaded;
 		std::uint32_t type, version, length;
 		while (a_intfc->GetNextRecordInfo(type, version, length)) {
-			if (type != kRecordType || version != kRecordVersion || length != sizeof(Record)) {
+			if (type != kRecordType || (version != 2 && version != kRecordVersion) || length != sizeof(Record)) {
 				continue;
 			}
 			Record r{};
@@ -421,13 +504,14 @@ namespace HP
 			loaded.rotate = { r.rotate[0], r.rotate[1], r.rotate[2] };
 			loaded.scale = { r.scale[0], r.scale[1], r.scale[2] };
 			loaded.pivot = r.pivot < static_cast<std::uint32_t>(PivotMode::kCount) ? static_cast<PivotMode>(r.pivot) : PivotMode::kBone;
+			loaded.worn = version >= 3 && r.pad[0] != 0;
 		}
 		auto& s = Session::Get();
 		ReplaceOffset(loaded);
 		s.Forget();
-		SKSE::log::info("co-save loaded: move ({:.2f} {:.2f} {:.2f}) rotate ({:.1f} {:.1f} {:.1f}) scale ({:.2f} {:.2f} {:.2f}) pivot {}",
+		SKSE::log::info("co-save loaded: move ({:.2f} {:.2f} {:.2f}) rotate ({:.1f} {:.1f} {:.1f}) scale ({:.2f} {:.2f} {:.2f}) pivot {} worn {}",
 			loaded.move.x, loaded.move.y, loaded.move.z, loaded.rotate.x, loaded.rotate.y, loaded.rotate.z,
-			loaded.scale.x, loaded.scale.y, loaded.scale.z, static_cast<std::uint32_t>(loaded.pivot));
+			loaded.scale.x, loaded.scale.y, loaded.scale.z, static_cast<std::uint32_t>(loaded.pivot), loaded.worn);
 	}
 
 	void OnRevert(SKSE::SerializationInterface*)

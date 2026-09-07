@@ -5,6 +5,8 @@ Scriptname HairPositioner Hidden
            3 tilt (pitch)      4 lean (roll)          5 turn (yaw)     -- degrees
            6 width             7 depth                8 height         -- scale, 1.0 = unchanged
  pivot   : 0 head bone (default)   1 hair center   2 model origin
+ worn    : also move items worn in the wig slots (ini WigSlots, default 31/41).
+           OFF by default -- helmets and hoods use those slots too.
 
  Console (vanilla cgf):
    cgf "HairPositioner.SetChannel" 2 5.0      ; hair up 5 units
@@ -21,6 +23,9 @@ float Function GetChannel(int channel) global native
 int Function GetPivotCount() global native
 Function SetPivot(int mode) global native
 int Function GetPivot() global native
+
+Function SetFollowWorn(bool on) global native
+bool Function GetFollowWorn() global native
 
 Function Reset() global native
 

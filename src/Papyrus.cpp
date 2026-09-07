@@ -33,6 +33,8 @@ namespace Papyrus
 		std::int32_t GetPivotCount(RE::StaticFunctionTag*) { return static_cast<std::int32_t>(HP::PivotMode::kCount); }
 		void         SetPivot(RE::StaticFunctionTag*, std::int32_t a_mode) { HP::SetPivot(Pivot(a_mode)); }
 		std::int32_t GetPivot(RE::StaticFunctionTag*) { return static_cast<std::int32_t>(HP::GetPivot()); }
+		void         SetFollowWorn(RE::StaticFunctionTag*, bool a_on) { HP::SetFollowWorn(a_on); }
+		bool         GetFollowWorn(RE::StaticFunctionTag*) { return HP::GetFollowWorn(); }
 
 		void Reset(RE::StaticFunctionTag*) { HP::ResetAdjust(); }
 
@@ -54,6 +56,8 @@ namespace Papyrus
 		a_vm->RegisterFunction("GetPivotCount", kScript, GetPivotCount);
 		a_vm->RegisterFunction("SetPivot", kScript, SetPivot);
 		a_vm->RegisterFunction("GetPivot", kScript, GetPivot);
+		a_vm->RegisterFunction("SetFollowWorn", kScript, SetFollowWorn);
+		a_vm->RegisterFunction("GetFollowWorn", kScript, GetFollowWorn);
 		a_vm->RegisterFunction("Reset", kScript, Reset);
 		a_vm->RegisterFunction("Probe", kScript, Probe);
 		a_vm->RegisterFunction("Show", kScript, Show);

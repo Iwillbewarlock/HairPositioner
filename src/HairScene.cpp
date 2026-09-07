@@ -95,12 +95,13 @@ namespace HP
 	}
 
 	// Wig slots: the whole worn item follows the hair, so every geometry under
-	// its partClone counts -- no name filter.
-	void HairScene::AppendWorn(std::vector<HairGeometry>& a_out)
+	// its partClone counts -- no name filter. Only when following worn items
+	// is switched on (or the caller insists).
+	void HairScene::AppendWorn(std::vector<HairGeometry>& a_out, bool a_evenIfOff)
 	{
 		auto*       player = Player();
 		const auto& slots = Settings::Get().wigSlots;
-		if (!player || slots.empty()) {
+		if (!player || slots.empty() || (!_followWorn && !a_evenIfOff)) {
 			return;
 		}
 		const auto& biped = player->GetCurrentBiped();
@@ -125,20 +126,58 @@ namespace HP
 		}
 	}
 
+	// A head part whose NIF holds a single shape ends up as one geometry named
+	// after the head part's editor ID. A head part whose NIF holds several
+	// shapes (modular / SMP hair pieces) ends up as a NiNode named after the
+	// editor ID with the shapes as children keeping their NIF names -- so the
+	// match has to happen at the face node's children and then take everything
+	// underneath a matching node.
 	std::vector<HairGeometry> HairScene::Current()
 	{
 		std::vector<HairGeometry> out;
 		const auto                names = HairNames();
 		auto*                     root = FaceRoot();
-		if (!names.empty() && root) {
-			RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* a_geo) {
-				const auto name = NameOf(a_geo);
-				if (std::any_of(names.begin(), names.end(), [&](const std::string& a_n) { return SameName(name, a_n); })) {
-					out.push_back({ a_geo, name, false });
-				}
-				return RE::BSVisit::BSVisitControl::kContinue;
-			});
+		auto*                     node = root ? root->AsNode() : nullptr;
+		if (names.empty() || !root) {
+			AppendWorn(out);
+			return out;
 		}
+		auto wanted = [&](const std::string& a_name) {
+			return std::any_of(names.begin(), names.end(), [&](const std::string& a_n) { return SameName(a_name, a_n); });
+		};
+		auto add = [&](RE::BSGeometry* a_geo, const std::string& a_label) {
+			if (std::none_of(out.begin(), out.end(), [&](const HairGeometry& a_g) { return a_g.geo == a_geo; })) {
+				out.push_back({ a_geo, a_label, false });
+			}
+		};
+		if (node) {
+			for (const auto& child : node->GetChildren()) {
+				auto* obj = child.get();
+				if (!obj) {
+					continue;
+				}
+				const auto name = NameOf(obj);
+				if (!wanted(name)) {
+					continue;
+				}
+				if (auto* geo = obj->AsGeometry()) {
+					add(geo, name);
+				} else if (obj->AsNode()) {
+					RE::BSVisit::TraverseScenegraphGeometries(obj, [&](RE::BSGeometry* a_geo) {
+						add(a_geo, std::format("{}/{}", name, NameOf(a_geo)));
+						return RE::BSVisit::BSVisitControl::kContinue;
+					});
+				}
+			}
+		}
+		// Fallback: any geometry anywhere under the root whose own name matches.
+		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* a_geo) {
+			const auto name = NameOf(a_geo);
+			if (wanted(name)) {
+				add(a_geo, name);
+			}
+			return RE::BSVisit::BSVisitControl::kContinue;
+		});
 		AppendWorn(out);
 		return out;
 	}
@@ -155,12 +194,18 @@ namespace HP
 			// have to be part of the stamp, not just their count.
 			for (const auto& child : node->GetChildren()) {
 				stamp.push_back(child.get());
+				// multi-shape head parts: their shapes sit one level deeper
+				if (auto* sub = child ? child->AsNode() : nullptr) {
+					for (const auto& grand : sub->GetChildren()) {
+						stamp.push_back(grand.get());
+					}
+				}
 			}
 		}
 		if (auto* player = Player()) {
 			const auto& biped = player->GetCurrentBiped();
 			stamp.push_back(biped.get());
-			if (biped) {
+			if (biped && _followWorn) {
 				for (const auto idx : Settings::Get().wigSlots) {
 					if (idx < RE::BIPED_OBJECTS::kTotal) {
 						stamp.push_back(biped->objects[idx].partClone.get());
@@ -171,10 +216,10 @@ namespace HP
 		return stamp;
 	}
 
-	std::vector<HairGeometry> HairScene::Worn()
+	std::vector<HairGeometry> HairScene::Worn(bool a_evenIfOff)
 	{
 		std::vector<HairGeometry> out;
-		AppendWorn(out);
+		AppendWorn(out, a_evenIfOff);
 		return out;
 	}
 

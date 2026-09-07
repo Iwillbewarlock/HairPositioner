@@ -28,6 +28,8 @@ namespace HP
 	float     GetChannel(std::int32_t a_channel);
 	void      SetPivot(PivotMode a_mode);
 	PivotMode GetPivot();
+	void      SetFollowWorn(bool a_on);  // move worn items in the wig slots too (off by default)
+	bool      GetFollowWorn();
 	void      ResetAdjust();
 	bool      HasTarget();
 	void      QueueProbe();

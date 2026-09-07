@@ -85,4 +85,49 @@ namespace HP
 		const float inv = 1.0f / static_cast<float>(n);
 		return { sum.x * inv, sum.y * inv, sum.z * inv };
 	}
+
+	RE::NiTransform PivotSolver::BindFrame(RE::BSGeometry* a_geo)
+	{
+		RE::NiTransform frame;  // identity
+		auto* skin = a_geo ? a_geo->GetGeometryRuntimeData().skinInstance.get() : nullptr;
+		auto* data = skin ? skin->skinData.get() : nullptr;
+		if (!skin || !data || !data->boneData || data->bones == 0) {
+			return frame;
+		}
+		REX::W32::EnterCriticalSection(std::addressof(skin->lock));
+		std::uint32_t best = 0;
+		for (std::uint32_t i = 0; i < data->bones; ++i) {
+			if (data->boneData[i].verts > best) {
+				best = data->boneData[i].verts;
+				frame = data->boneData[i].skinToBone;
+			}
+		}
+		REX::W32::LeaveCriticalSection(std::addressof(skin->lock));
+		return frame;
+	}
+
+	RE::NiPoint3 PivotSolver::BoneSpaceCentroid(const std::vector<HairGeometry>& a_geos, const MeshPatch::PatchMap& a_patches)
+	{
+		RE::NiPoint3  sum{};
+		std::uint64_t n = 0;
+		for (const auto& g : a_geos) {
+			const auto it = a_patches.find(g.geo);
+			if (it == a_patches.end() || !it->second.HasRest()) {
+				continue;
+			}
+			const auto frame = BindFrame(g.geo);
+			for (const auto& p : it->second.Rest()) {
+				const RE::NiPoint3 q = frame * p;
+				sum.x += q.x;
+				sum.y += q.y;
+				sum.z += q.z;
+			}
+			n += it->second.Rest().size();
+		}
+		if (n == 0) {
+			return {};
+		}
+		const float inv = 1.0f / static_cast<float>(n);
+		return { sum.x * inv, sum.y * inv, sum.z * inv };
+	}
 }

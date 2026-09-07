@@ -6,10 +6,12 @@ Scriptname RaceMenuHairPositioner extends RaceMenuBase
 ; ---- slider table ---------------------------------------------------------
 ; index 0..8  -> native channel (same index)
 ; index 9     -> pivot mode
-; index 10    -> reset trigger
-int Property SLIDER_COUNT = 11 AutoReadOnly
+; index 10    -> follow worn items (wig slots) on/off
+; index 11    -> reset trigger
+int Property SLIDER_COUNT = 12 AutoReadOnly
 int Property IDX_PIVOT = 9 AutoReadOnly
-int Property IDX_RESET = 10 AutoReadOnly
+int Property IDX_WORN = 10 AutoReadOnly
+int Property IDX_RESET = 11 AutoReadOnly
 
 ; ---- persistence through RaceMenu itself ----------------------------------
 ; Every value is mirrored into RaceMenu's body-morph store under one key.
@@ -20,6 +22,7 @@ int Property IDX_RESET = 10 AutoReadOnly
 string Property MORPH_KEY = "HairPositioner" AutoReadOnly
 string Property MORPH_PRESENT = "HPOS_Present" AutoReadOnly
 string Property MORPH_PIVOT = "HPOS_Pivot" AutoReadOnly
+string Property MORPH_WORN = "HPOS_Worn" AutoReadOnly
 
 string[] _label      ; translation key
 float[]  _min
@@ -41,11 +44,11 @@ Event OnStartup()
 EndEvent
 
 Function BuildTable()
-	_label = new string[11]
-	_min   = new float[11]
-	_max   = new float[11]
-	_step  = new float[11]
-	_value = new float[11]
+	_label = new string[12]
+	_min   = new float[12]
+	_max   = new float[12]
+	_step  = new float[12]
+	_value = new float[12]
 
 	; move
 	SetRow(0, "$HPOS_MoveSide",    -15.0, 15.0, 0.01)
@@ -61,6 +64,7 @@ Function BuildTable()
 	SetRow(8, "$HPOS_Height",        0.5,  2.0, 0.01)
 	; controls
 	SetRow(IDX_PIVOT,       "$HPOS_Pivot",      0.0, (HairPositioner.GetPivotCount() - 1) as float, 1.0)
+	SetRow(IDX_WORN,        "$HPOS_Worn",       0.0, 1.0, 1.0)
 	SetRow(IDX_RESET,       "$HPOS_Reset",      0.0, 1.0, 1.0)
 EndFunction
 
@@ -82,6 +86,16 @@ Function StorePivot()
 	NiOverride.SetBodyMorph(player, MORPH_PRESENT, MORPH_KEY, 1.0)
 EndFunction
 
+Function StoreWorn()
+	Actor player = Game.GetPlayer()
+	float v = 0.0
+	if HairPositioner.GetFollowWorn()
+		v = 1.0
+	endif
+	NiOverride.SetBodyMorph(player, MORPH_WORN, MORPH_KEY, v)
+	NiOverride.SetBodyMorph(player, MORPH_PRESENT, MORPH_KEY, 1.0)
+EndFunction
+
 ; Plugin -> RaceMenu store (everything).
 Function StoreAll()
 	int c = 0
@@ -90,6 +104,7 @@ Function StoreAll()
 		c += 1
 	endwhile
 	StorePivot()
+	StoreWorn()
 EndFunction
 
 ; RaceMenu store -> plugin. Called after RaceMenu (re)initialises the menu,
@@ -106,6 +121,8 @@ Function RestoreAll()
 		c += 1
 	endwhile
 	HairPositioner.SetPivot(NiOverride.GetBodyMorph(player, MORPH_PIVOT, MORPH_KEY) as int)
+	; older presets have no entry -> 0.0 -> off, which is the safe default
+	HairPositioner.SetFollowWorn(NiOverride.GetBodyMorph(player, MORPH_WORN, MORPH_KEY) >= 0.5)
 EndFunction
 
 ; If RaceMenu holds our values (a preset with hair data was loaded, or we
@@ -148,6 +165,10 @@ float Function ReadRow(int i)
 		return HairPositioner.GetChannel(i)
 	elseif i == IDX_PIVOT
 		return HairPositioner.GetPivot() as float
+	elseif i == IDX_WORN
+		if HairPositioner.GetFollowWorn()
+			return 1.0
+		endif
 	endif
 	return 0.0
 EndFunction
@@ -195,6 +216,9 @@ Event OnSliderChanged(string callback, float value)
 	elseif i == IDX_PIVOT
 		HairPositioner.SetPivot(value as int)
 		StorePivot()
+	elseif i == IDX_WORN
+		HairPositioner.SetFollowWorn(value >= 0.5)
+		StoreWorn()
 	elseif i == IDX_RESET
 		if value >= 0.5
 			HairPositioner.Reset()

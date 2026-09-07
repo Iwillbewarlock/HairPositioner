@@ -167,6 +167,25 @@ namespace HP
 		g_restByPartition.clear();
 	}
 
+	void MeshPatch::InheritFrom(const MeshPatch& a_old)
+	{
+		_rest = a_old._rest;
+		_hasRest = a_old._hasRest;
+		_sample = a_old._sample;
+		_stride = a_old._stride;
+	}
+
+	std::uint32_t MeshPatch::VertexCountOf(RE::BSGeometry* a_geo)
+	{
+		if (auto* dyn = netimmerse_cast<RE::BSDynamicTriShape*>(a_geo)) {
+			if (const auto n = DynamicVertexCount(a_geo, dyn); n != 0) {
+				return n;
+			}
+		}
+		auto* part = PartitionOf(a_geo);
+		return part ? part->vertexCount : 0;
+	}
+
 	bool MeshPatch::Skip(RE::BSGeometry* a_geo, bool a_verbose, std::string a_reason, bool a_permanent)
 	{
 		const std::string line = std::format("[{}] {}", a_geo->name.c_str(), a_reason);
@@ -213,23 +232,32 @@ namespace HP
 	bool MeshPatch::CaptureDynamic(RE::BSGeometry* a_geo, RE::BSDynamicTriShape* a_dyn, bool a_verbose)
 	{
 		_storage = Storage::kDynamicBuffer;
-		StripBaseMorph(a_geo);
 		auto&      rt = a_dyn->GetDynamicTrishapeRuntimeData();
 		const auto count = DynamicVertexCount(a_geo, a_dyn);
 		if (!rt.dynamicData || count == 0) {
 			return Skip(a_geo, a_verbose, std::format("dynamic tri shape without usable dynamic data (verts {}, field {})", count, rt.dataSize), true);
 		}
 		if (!DynamicHolds(a_geo, a_dyn)) {
-			// The engine's own positions are in the buffer: that is the rest pose.
-			_rest.resize(count);
-			rt.lock.Lock();
-			for (std::uint32_t i = 0; i < count; ++i) {
-				_rest[i] = ReadFloat3(rt.dynamicData, i, kDynamicStride);
+			// If this shape still sits on a skin partition we transformed, the
+			// dynamic buffer was seeded from our positions -- take the untouched
+			// rest from the registry instead of reading the buffer.
+			if (const auto* saved = FindRest(PartitionOf(a_geo)); saved && saved->size() == count) {
+				_rest = *saved;
+			} else {
+				// The engine's own positions are in the buffer: that is the rest pose.
+				_rest.resize(count);
+				rt.lock.Lock();
+				for (std::uint32_t i = 0; i < count; ++i) {
+					_rest[i] = ReadFloat3(rt.dynamicData, i, kDynamicStride);
+				}
+				rt.lock.Unlock();
 			}
-			rt.lock.Unlock();
 			_hasRest = true;
 			_stride = kDynamicStride;
 		}
+		// Only after the rest is secured: without the base block the engine
+		// cannot rebuild the buffer from untouched positions and undo us.
+		StripBaseMorph(a_geo);
 		return true;
 	}
 
