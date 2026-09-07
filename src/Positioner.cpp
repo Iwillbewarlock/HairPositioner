@@ -237,8 +237,8 @@ namespace HP
 						Con::SayErr("[{}] no skin partition", g.label);
 					}
 					const auto f = PivotSolver::BindFrame(g.geo);
-					Con::Say("  bind: scale {:.3f} t ({:.2f} {:.2f} {:.2f}) rot00 {:.3f}  geo scale {:.3f}",
-						f.scale, f.translate.x, f.translate.y, f.translate.z, f.rotate.entry[0][0], g.geo->world.scale);
+					Con::Say("  bind: {} scale {:.3f} t ({:.2f} {:.2f} {:.2f}) rot00 {:.3f}  geo scale {:.3f}",
+						PivotSolver::BindBoneName(g.geo), f.scale, f.translate.x, f.translate.y, f.translate.z, f.rotate.entry[0][0], g.geo->world.scale);
 					if (it != _patches.end() && !it->second.LastSkip().empty()) {
 						Con::SayWarn("  last skip: {}", it->second.LastSkip());
 					}

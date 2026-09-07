@@ -18,6 +18,9 @@ namespace HP
 		// that bone's space.
 		[[nodiscard]] static RE::NiTransform BindFrame(RE::BSGeometry* a_geo);
 
+		// Name of the bone BindFrame() picked for this piece (diagnostics).
+		[[nodiscard]] static std::string BindBoneName(RE::BSGeometry* a_geo);
+
 		// Bone-space centroid of every rest vertex of a_geos (each mapped through
 		// its own BindFrame).
 		[[nodiscard]] static RE::NiPoint3 BoneSpaceCentroid(const std::vector<HairGeometry>& a_geos, const MeshPatch::PatchMap& a_patches);

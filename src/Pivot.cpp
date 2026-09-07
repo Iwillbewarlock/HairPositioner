@@ -2,6 +2,11 @@
 
 namespace HP
 {
+	namespace
+	{
+		constexpr std::string_view kHeadBoneName = "NPC Head [Head]";
+	}
+
 	RE::NiPoint3 PivotSolver::Solve(PivotMode a_mode, const std::vector<HairGeometry>& a_geos, const MeshPatch::PatchMap& a_patches)
 	{
 		switch (a_mode) {
@@ -95,15 +100,60 @@ namespace HP
 			return frame;
 		}
 		REX::W32::EnterCriticalSection(std::addressof(skin->lock));
-		std::uint32_t best = 0;
-		for (std::uint32_t i = 0; i < data->bones; ++i) {
-			if (data->boneData[i].verts > best) {
-				best = data->boneData[i].verts;
-				frame = data->boneData[i].skinToBone;
+		// Every piece of one hair has to be pulled back through the SAME bone,
+		// or the shared offset lands differently on each piece. Hair is meant
+		// to sit on the head bone, so take that whenever the piece is skinned
+		// to it at all -- even if a physics bone happens to own more of its
+		// vertices (SMP pieces). Only a piece with no head bone falls back to
+		// its heaviest bone.
+		bool headFound = false;
+		if (skin->bones) {
+			for (std::uint32_t i = 0; i < data->bones && !headFound; ++i) {
+				auto* bone = skin->bones[i];
+				const char* name = bone ? bone->name.c_str() : nullptr;
+				if (name && std::string_view{ name } == kHeadBoneName) {
+					frame = data->boneData[i].skinToBone;
+					headFound = true;
+				}
+			}
+		}
+		if (!headFound) {
+			std::uint32_t best = 0;
+			for (std::uint32_t i = 0; i < data->bones; ++i) {
+				if (data->boneData[i].verts > best) {
+					best = data->boneData[i].verts;
+					frame = data->boneData[i].skinToBone;
+				}
 			}
 		}
 		REX::W32::LeaveCriticalSection(std::addressof(skin->lock));
 		return frame;
+	}
+
+	std::string PivotSolver::BindBoneName(RE::BSGeometry* a_geo)
+	{
+		auto* skin = a_geo ? a_geo->GetGeometryRuntimeData().skinInstance.get() : nullptr;
+		auto* data = skin ? skin->skinData.get() : nullptr;
+		if (!skin || !data || !data->boneData || data->bones == 0 || !skin->bones) {
+			return "(unskinned)";
+		}
+		REX::W32::EnterCriticalSection(std::addressof(skin->lock));
+		std::string   picked;
+		std::uint32_t best = 0;
+		for (std::uint32_t i = 0; i < data->bones; ++i) {
+			auto*       bone = skin->bones[i];
+			const char* name = bone && bone->name.c_str() ? bone->name.c_str() : "?";
+			if (std::string_view{ name } == kHeadBoneName) {
+				picked = std::string{ name } + " (head)";
+				break;
+			}
+			if (data->boneData[i].verts > best) {
+				best = data->boneData[i].verts;
+				picked = std::string{ name } + " (heaviest, no head bone)";
+			}
+		}
+		REX::W32::LeaveCriticalSection(std::addressof(skin->lock));
+		return picked;
 	}
 
 	RE::NiPoint3 PivotSolver::BoneSpaceCentroid(const std::vector<HairGeometry>& a_geos, const MeshPatch::PatchMap& a_patches)
